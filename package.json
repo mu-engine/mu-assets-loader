@@ -1,0 +1,8 @@
+{
+  "name": "mu-assets-loader",
+  "description": "Webpack Asset Loader for mu-engine",
+  "version": "0.0.0",
+  "main": "index.js",
+  "author": "John J. Glynn IV <jjg1914@rit.edu>",
+  "license": "MIT"
+}
