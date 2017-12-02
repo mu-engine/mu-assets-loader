@@ -4,5 +4,10 @@
   "version": "0.0.0",
   "main": "index.js",
   "author": "John J. Glynn IV <jjg1914@rit.edu>",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "async": "^2.6.0",
+    "glob": "^7.1.2",
+    "xml2js": "^0.4.19"
+  }
 }
