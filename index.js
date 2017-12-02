@@ -6,6 +6,7 @@ const glob = require("glob");
 const xml2js = require("xml2js");
 
 module.exports = function MuAssetsLoader(source, context) {
+  this.cacheable();
   const cb = this.async();
   const config = JSON.parse(source);
   const version = this.version;
@@ -16,9 +17,14 @@ module.exports = function MuAssetsLoader(source, context) {
     (data, cb2) => { _unserializeFilelist(data, cb2); },
   ], (err, data) => {
     if (err) {
+      console.error(err);
       cb(err);
     } else {
       try {
+        for (let e of data) {
+          this.addDependency(e.fname)
+        }
+
         const assetData = _createAssetdata(data);
         const content = _serializeAssetdata(assetData);
 
@@ -34,6 +40,7 @@ module.exports = function MuAssetsLoader(source, context) {
           `);
         }
       } catch (e) {
+        console.error(e);
         cb(e);
       }
     }
@@ -80,7 +87,7 @@ function _unserializeFilelist(filelist, cb) {
       } catch (err) {
         xml2js.parseString(e.content, (err2, xml) => {
           if (err2) {
-            cb2(new Error("failed to parse file: " + e.fname));
+            cb2(null, { fname: e.fname });
           } else {
             cb2(null, { fname: e.fname, data: xml });
           }
@@ -101,14 +108,24 @@ function _createAssetdata(filedata) {
     } else if (_isStage(e.data)) {
       return { fname: e.fname, type: "stage", data: e.data };
     } else {
-      throw "uncognized data: " + e.fname;
+      return { fname: e.fname };
     }
   });
 }
 
 function _serializeAssetdata(assetdata) {
   const list = assetdata.map((e) => {
-    return `"${path.basename(e.fname)}": ${JSON.stringify({ type: e.type, data: e.data })},`;
+    if (e.type !== undefined) {
+      return `"${path.basename(e.fname)}": ${JSON.stringify({ type: e.type, data: e.data })},`;
+    } else {
+      const basename = path.basename(e.fname);
+      const modulename = path.join(path.dirname(e.fname), basename.split(".")[0]);
+
+      const name = basename.split(".")[0].split("-").map((e) => {
+        return e[0].toUpperCase() + e.substr(1).toLowerCase();
+      }).join("");
+      return `"${basename.split(".")[0]}": { data: require("./${modulename}")["${name}"] },`;
+    }
   })
 
   return `new Assets({
