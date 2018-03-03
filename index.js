@@ -107,6 +107,8 @@ function _createAssetdata(filedata) {
       return { fname: e.fname, type: "tileset", data: e.data };
     } else if (_isStage(e.data)) {
       return { fname: e.fname, type: "stage", data: e.data };
+    } else if (_isImage(e.fname)) {
+      return { fname: e.fname, type: "rawimage", data: e.fname };
     } else {
       return { fname: e.fname };
     }
@@ -162,4 +164,8 @@ function _isStage(data) {
          (typeof data.map === "object") &&
          (typeof data.map.$ === "object") &&
          (typeof data.map.$.tiledversion === "string");
+}
+
+function _isImage(fname) {
+  return /\.(png)$/i.test(fname);
 }
