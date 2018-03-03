@@ -151,8 +151,10 @@ function _isSprite(data) {
 }
 
 function _isTileset(data) {
-  return (typeof data === "object") &&
-         (data.type === "tileset");
+  return ((typeof data === "object") &&
+         (data.type === "tileset")) ||
+         ((typeof data === "object") &&
+         (typeof data.tileset === "object"));
 }
 
 function _isStage(data) {
