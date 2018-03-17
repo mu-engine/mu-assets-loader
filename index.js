@@ -8,34 +8,22 @@ const xml2js = require("xml2js");
 module.exports = function MuAssetsLoader(source, context) {
   this.cacheable();
   const cb = this.async();
-  const config = JSON.parse(source);
   const version = this.version;
 
-  asyncjs.waterfall([
-    (cb2) => { _generateFilelist(config.include, config.exports, cb2); },
-    (data, cb2) => { _readFilelist(data, cb2); },
-    (data, cb2) => { _unserializeFilelist(data, cb2); },
-  ], (err, data) => {
+  _main(this, [], process.cwd(), source, context, function(err, data) {
     if (err) {
       console.error(err);
       cb(err);
     } else {
       try {
-        for (let e of data) {
-          this.addDependency(e.fname)
-        }
-
-        const assetData = _createAssetdata(data);
-        const content = _serializeAssetdata(assetData);
+        const content = _serializeAssetdata(data);
 
         if (version && version >= 2) {
           cb(null, `
-          import { Assets } from "mu-engine";
           export default ${content};
           `);
         } else {
           cb(null, `
-          const Assets = require("mu-engine").Assets;
           module.exports = ${content};
           `);
         }
@@ -47,10 +35,58 @@ module.exports = function MuAssetsLoader(source, context) {
   });
 }
 
-function _generateFilelist(includes, exclude, cb) {
+function _main(self, dest, cwd, source, context, cb) {
+  try {
+    const config = JSON.parse(source);
+
+    asyncjs.parallel((config.imports || []).map(function(e) {
+      return function(cb2) {
+        fs.readFile(e, (err, data) => {
+          if (err) {
+            cb2(err);
+          } else {
+            self.addDependency(e)
+            _main(self, dest, path.join(cwd, path.dirname(e)), data.toString(), context, cb2);
+          }
+        });
+      };
+    }), function(err, imported) {
+      if (err) {
+        cb(err);
+      } else {
+        imported = imported.reduce((m, v) => m.concat(v), []);
+
+        asyncjs.waterfall([
+          (cb2) => { _generateFilelist(config.include, config.exclude, cwd, cb2); },
+          (data, cb2) => { _readFilelist(data, cb2); },
+          (data, cb2) => { _unserializeFilelist(data, cb2); },
+        ], (err, data) => {
+          if (err) {
+            console.error(err);
+            cb(err);
+          } else {
+            try {
+              for (let e of data) {
+                self.addDependency(e.fname)
+              }
+
+              cb(null, dest.concat(_createAssetdata(imported.concat(data))));
+            } catch (e) {
+              cb(err);
+            }
+          }
+        });
+      }
+    });
+  } catch (err) {
+    cb(err);
+  }
+}
+
+function _generateFilelist(includes, exclude, cwd, cb) {
   asyncjs.parallel(includes.map((e) => {
     return (cb2) => {
-      glob.glob(e, {
+      glob.glob(path.join(cwd, e), {
         ignore: exclude,
         nodir: true,
       }, cb2);
@@ -85,11 +121,14 @@ function _unserializeFilelist(filelist, cb) {
         const json = JSON.parse(e.content);
         cb2(null, { fname: e.fname, data: json });
       } catch (err) {
-        xml2js.parseString(e.content, (err2, xml) => {
+        xml2js.parseString(e.content, {
+          explicitChildren: true,
+          preserveChildrenOrder: true,
+        }, (err2, xml) => {
           if (err2) {
-            cb2(null, { fname: e.fname });
+            cb2(null, { fname: path.relative(process.cwd(), e.fname) });
           } else {
-            cb2(null, { fname: e.fname, data: xml });
+            cb2(null, { fname: path.relative(process.cwd(), e.fname), data: xml });
           }
         });
       }
@@ -116,26 +155,30 @@ function _createAssetdata(filedata) {
 }
 
 function _serializeAssetdata(assetdata) {
-  const list = assetdata.map((e) => {
-    if (e.type !== undefined) {
-      return `"${path.basename(e.fname)}": ${JSON.stringify({ type: e.type, data: e.data })},`;
+  const index = assetdata.reduce((m,v) => {
+    if (v.type !== undefined) {
+      m[path.basename(v.fname)] = JSON.stringify({ type: v.type, data: v.data });
     } else {
-      const basename = path.basename(e.fname);
-      const modulename = path.join(path.dirname(e.fname), basename.split(".")[0]);
+      const basename = path.basename(v.fname);
+      const modulename = path.join(path.dirname(v.fname), basename.split(".")[0]);
 
       const name = basename.split(".")[0].split("-").map((e) => {
         return e[0].toUpperCase() + e.substr(1).toLowerCase();
       }).join("");
-      return `"${basename.split(".")[0]}": { data: require("./${modulename}")["${name}"] },`;
-    }
-  })
 
-  return `new Assets({
-    preload: true,
-    assets: {
-      ${list.join("\n")}
+      m[basename.split(".")[0]] = `{ data: require("./${modulename}")["${name}"] }`;
     }
-  })`;
+
+    return m;
+  }, {});
+
+  let rval = "";
+
+  for (let e in index) {
+    rval += `"${e}": ${index[e]},\n`
+  }
+
+  return `{\n  ${rval}\n}\n`;
 }
 
 // TODO do JSON schema checks instead
